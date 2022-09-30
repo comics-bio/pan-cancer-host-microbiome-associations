@@ -1,0 +1,9 @@
+public:
+  seed: 42
+  inter.loc: ../data/intermediate/
+  data.loc: ../data/
+  result.loc: ../result/
+  fig.loc: ../figures/
+preprocess:
+  tag: 01.Preprocessed
+  qt: 2
