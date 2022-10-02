@@ -7,3 +7,8 @@ public:
 preprocess:
   tag: 01.Preprocessed
   qt: 2
+SparseCCA:
+  tag: SparseCCA
+  num_cores: 12
+  num_componets: 10
+  FDR.cutoff: 0.1

@@ -12,6 +12,7 @@ src/.ipynb_checkpoints
 
 data/raw/
 data/01.preprocessed
+data/SparseCCA
 docs/
 figures/
 bsub_job/

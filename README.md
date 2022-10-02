@@ -21,11 +21,34 @@ To reproduce the main figures and result  of the project, you can follow these i
 ### 1. Setup
 
 
-
 ```bash
 cd ./src
-Rscript prepare_data.R
+Rscript 01_preprocess_data.R
 ```
+
+### SparseCCA
+
+```bash
+Options:
+        -p PROJECT, --project=PROJECT
+                TCGA cancer project [default: TCGA-BRCA]
+
+        -o OUTPUT, --output=OUTPUT
+                The analysis result location [default: ../result/]
+
+        -n NUM, --num=NUM
+                Cluster cores numbers [default: 12]
+
+        -c COMPONET, --componet=COMPONET
+                CCA componet[default: 10]
+
+        -f FDR, --fdr=FDR
+                CCA componet[default: 0]
+
+        -h, --help
+                Show this help message and exit
+```
+
 
 ### Lasso 
 

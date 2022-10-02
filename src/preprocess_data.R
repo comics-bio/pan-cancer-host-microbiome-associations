@@ -5,7 +5,7 @@
 ## @Platform    :   All Linux Based Platform
 ## @Author      :   Su Changxing
 ## @Version     :   1.0
-## @Contact     :   suchangxing@genomics.cn                      
+## @Contact     :   cheonghing.so@gmail.com                      
 ## @License     :   (C)Copyright 2017-2018, Liugroup-NLPR-CASIA  
 ###################################################################
 
@@ -44,14 +44,13 @@ start.time <- proc.time()[1]
 
 
 ## load parameters
-parameters <- yaml.load_file('./parameters.yaml')
-cat("Loaded yaml config")
+parameters <- yaml.load_file('../parameters.yaml')
+cat("Loaded yaml config\n")
 set.seed(parameters$public$seed)
 data.loc <- parameters$public$data.loc
 tag <- parameters$preprocess$tag
 qt <- parameters$preprocess$qt
-
-
+cat("Preprocessed Data will be save in ",data.loc,"\n")
 # ----------------------------------------------------------------------
 #                              Function 
 # ----------------------------------------------------------------------
@@ -86,17 +85,17 @@ filter_genes <- function(feat.gene, qt){
 #                              Main 
 # ----------------------------------------------------------------------
 
+cat("Read data\n")
 
-
-feat.gene.raw <- load_gene_expr("C:/Lab/pan-cancer-host-microbiome-associations/data/raw/TCGA/EBPlusPlusAdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv")
+feat.gene.raw <- load_gene_expr(paste0(data.loc,"raw/TCGA/EBPlusPlusAdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv"))
 dim(feat.gene.raw)
 
 
-meta.all <- load_microbiome_abnd("C:/Lab/pan-cancer-host-microbiome-associations/data/raw/kinght_2020/Metadata-TCGA-All-18116-Samples.csv")
+meta.all <- load_microbiome_abnd(paste0(data.loc,"raw/kinght_2020/Metadata-TCGA-All-18116-Samples.csv"))
 dim(meta.all)
 
 ## load microbiome data
-feat.otu.relt <- load_microbiome_abnd("C:/Lab/pan-cancer-host-microbiome-associations/data/raw/kinght_2020/Kraken-TCGA-Voom-SNM-All-Putative-Contaminants-Removed-Data.csv")
+feat.otu.relt <- load_microbiome_abnd(paste0(data.loc,"raw/kinght_2020/Kraken-TCGA-Voom-SNM-All-Putative-Contaminants-Removed-Data.csv"))
 dim(feat.otu.relt)
 
 ## change meta rownames as aliquot_ids
@@ -170,8 +169,9 @@ write.table(meta.all.valid,
             sep="\t",
             file = paste0(output_dirname,"Metadata-TCGA-Valid-All-",dim(meta.all.valid)[1],'.tsv'))
 
-cat("Successfully preprocessed of whole datasets")
+cat("Successfully preprocessed of whole datasets \n")
 
+cat("Start dividing the data for each TCGA project \n")
 ## Splitting data by project name
 meta.all.valid$investigation <- as.factor(meta.all.valid$investigation)
 projects <- levels(meta.all.valid$investigation)
@@ -203,7 +203,62 @@ for (project in projects) {
   write.table(meta.project,
               sep="\t",
               file = paste0(output_dirname,"Metadata-TCGA-Valid-",project,"-",dim(meta.project)[1],'.tsv'))
-  cat("Successfully preprocessed of ",project," datasets")
+  cat("Successfully preprocessed of ",project," whole datasets\n")
+  
+  ###
+  ### Case
+  
+  case_output_dirname <- paste0(data.loc, tag, "/",project,"/case/")
+  ifelse(!dir.exists(case_output_dirname), dir.create(case_output_dirname), FALSE)
+  
+  case.idx <-  rownames(meta.project[which(meta.project[,"sample_type"]=="Primary Tumor"),])#get case id
+  feat.gene.protein.project.case <- feat.gene.protein.project[case.idx,]
+  cat('Feature genes expression case dimensions:', dim(feat.gene.protein.project.case), '\n')
+  write.table(feat.gene.protein.project.case,
+              sep="\t",
+              file = paste0(case_output_dirname,"Geneexpr-TCGA-ProteinCoding-QtFilt-",project,"-case.tsv"))
+  
+  feat.otu.relt.projcet.case <- feat.otu.relt.projcet[case.idx,]
+  cat('Feature microbiome otu case dimensions:', dim(feat.otu.relt.projcet.case), '\n')
+  
+  write.table(feat.otu.relt.projcet.case,
+              sep="\t",
+              file =paste0(case_output_dirname,"Kraken-TCGA-Voom-SNM-",project,"-case.tsv"))
+  
+  meta.project.case <- meta.project[case.idx,]
+  write.table(meta.project.case,
+              sep="\t",
+              file = paste0(case_output_dirname,"Metadata-TCGA-Valid-",project,"-case.tsv"))
+  
+  cat('Metadata case dimensions:', dim(meta.project.case), '\n')
+  cat("Successfully segmented ",project," case datasets\n")
+
+  ###
+  ### Control
+  ctr_output_dirname <- paste0(data.loc, tag, "/",project,"/control/")
+  ifelse(!dir.exists(ctr_output_dirname), dir.create(ctr_output_dirname), FALSE)
+  
+  ctr.idx <-  rownames(meta.project[which(meta.project[,"sample_type"]=="Solid Tissue Normal"),])#get control id
+  feat.gene.protein.project.ctr <- feat.gene.protein.project[ctr.idx,]
+  cat('Feature genes expression control dimensions:', dim(feat.gene.protein.project.ctr), '\n')
+  write.table(feat.gene.protein.project.ctr,
+              sep="\t",
+              file = paste0(case_output_dirname,"Geneexpr-TCGA-ProteinCoding-QtFilt-",project,"-ctr.tsv"))
+  
+  feat.otu.relt.projcet.ctr <- feat.otu.relt.projcet[ctr.idx,]
+  cat('Feature microbiome otu case dimensions:', dim(feat.otu.relt.projcet.ctr), '\n')
+  
+  write.table(feat.otu.relt.projcet.ctr,
+              sep="\t",
+              file =paste0(case_output_dirname,"Kraken-TCGA-Voom-SNM-",project,"-ctr.tsv"))
+  
+  meta.project.ctr <- meta.project[ctr.idx,]
+  write.table(meta.project.ctr,
+              sep="\t",
+              file = paste0(case_output_dirname,"Metadata-TCGA-Valid-",project,"-ctr.tsv"))
+  
+  cat('Metadata case dimensions:', dim(meta.project.ctr), '\n')
+  cat("Successfully segmented ",project," control datasets\n")
 }
 
 # ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl",host="https://www.ensembl.org")
