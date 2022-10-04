@@ -16,18 +16,21 @@
 # Install CRAN packages (if not already installed)
 .inst <- .cran_packages %in% installed.packages()
 if (any(!.inst)) {
-  install.packages(.cran_packages[!.inst], repos = "http://cran.rstudio.com/")
+  #Here we use sustech cran
+  options(repos=structure(c(CRAN="https://mirrors.sustech.edu.cn/CRAN/")))
+  install.packages(.cran_packages[!.inst])
 }
 
-.bioc_packages <- c(
-                    "SummarizedExperiment",#To handle S3 
-                    "biomaRt",#To only keep data for protein-coding genes
-                    "edgeR"#Gene expressiong data preprocess
+.bioc_packages <- c("TCGAutils",
+                    "biomaRt"#To only keep data for protein-coding genes
                     )
 
 # Install Bioconductor packages (if not already installed)
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
+if (!require("BiocManager", quietly = TRUE)){
+  options(repos=structure(c(CRAN="https://mirrors.sustech.edu.cn/CRAN/")))
+  install.packages("BiocManager")
+}
+
 
 .inst <- .bioc_packages %in% installed.packages()
 if (any(!.inst)) {
@@ -38,6 +41,10 @@ if (any(!.inst)) {
 ## Import the packages
 sapply(c(.cran_packages, .bioc_packages), require, character.only = TRUE)
 cat("Susscessfully loaded packages")
+
+## This script relies heavily on the R package 'biomaRt',check its version
+cat("BiomaRt version is ")
+packageVersion('biomaRt')
 
 cat('Starting data preprocee script\n')
 start.time <- proc.time()[1]
@@ -85,17 +92,17 @@ filter_genes <- function(feat.gene, qt){
 #                              Main 
 # ----------------------------------------------------------------------
 
-cat("Read data\n")
+cat("Read raw data\n")
 
-feat.gene.raw <- load_gene_expr(paste0(data.loc,"raw/TCGA/EBPlusPlusAdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv"))
+feat.gene.raw <- load_gene_expr(paste0(data.loc,"raw/PanCanAtlas/EBPlusPlusAdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv"))
 dim(feat.gene.raw)
 
 
-meta.all <- load_microbiome_abnd(paste0(data.loc,"raw/kinght_2020/Metadata-TCGA-All-18116-Samples.csv"))
+meta.all <- load_microbiome_abnd(paste0(data.loc,"raw/Kinght_2020/Metadata-TCGA-All-18116-Samples.csv"))
 dim(meta.all)
 
 ## load microbiome data
-feat.otu.relt <- load_microbiome_abnd(paste0(data.loc,"raw/kinght_2020/Kraken-TCGA-Voom-SNM-All-Putative-Contaminants-Removed-Data.csv"))
+feat.otu.relt <- load_microbiome_abnd(paste0(data.loc,"raw/Kinght_2020/Kraken-TCGA-Voom-SNM-All-Putative-Contaminants-Removed-Data.csv"))
 dim(feat.otu.relt)
 
 ## change meta rownames as aliquot_ids
@@ -105,7 +112,7 @@ meta.all <- meta.all[!duplicated(meta.all$aliquot_uuid, fromLast = F),]
 meta.all <-  tibble::rownames_to_column(meta.all,"ID")
 rownames(meta.all) <- meta.all[,"aliquot_uuid"]
 
-
+# Transform TCGAbarcode to UUID
 TCGAbarcode <- colnames(feat.gene.raw)
 UUID.idx <- TCGAutils::barcodeToUUID(TCGAbarcode)
 rownames(UUID.idx) <- UUID.idx$submitter_aliquot_ids
@@ -120,8 +127,10 @@ colnames(feat.gene.raw) <-sample.idx
 gene.name <-str_split_fixed(rownames(feat.gene.raw),"\\|",2)[,1]#get the gene name
 rownames(feat.gene.raw) <- gene.name
 ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl",host="https://www.ensembl.org")
+
+
 #used the ‘biomaRt’ R package to only keep data for protein-coding genes
-#https://www.biostars.org/p/9517934/#9517940
+#ref:https://www.biostars.org/p/9517934/#9517940
 transcript.biotype <- biomaRt::getBM(
   attributes=c("hgnc_symbol","transcript_biotype"),
   #filters = c("transcript_biotype"), 

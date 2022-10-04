@@ -5,7 +5,7 @@ public:
   result.loc: ../result/
   fig.loc: ../figures/
 preprocess:
-  tag: 01.Preprocessed
+  tag: Preprocessed
   qt: 2
 SparseCCA:
   tag: SparseCCA

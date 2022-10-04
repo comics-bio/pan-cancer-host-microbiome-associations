@@ -15,7 +15,7 @@ data/01.preprocessed
 data/SparseCCA
 docs/
 figures/
-bsub_job/
+bsub_jobs/
 
 *.png
 *.rds

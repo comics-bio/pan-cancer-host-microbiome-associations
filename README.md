@@ -10,6 +10,9 @@ Manuscript for pan-cancer-host-microbiome-associations
 easily check whether that is the case by running
 
     ```bash
+    conda create -n pancancer
+    conda activate pancancer
+    conda install -c conda-forge r-base=4.2.1
     Rscript requirements.R
     ```
     and confirm that it does not produce any errors.
@@ -18,17 +21,39 @@ easily check whether that is the case by running
 
 To reproduce the main figures and result  of the project, you can follow these instructions.
 
-### 1. Setup
+### 0. Download data
 
+#### RNA expression data matrix
+The matrix `EBPlusPlusAdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv` was generated following the Firehose pipeline: MapSplice + RSEM, then normalised by setting the upper-quartile to 1,000.
+
+Pipeline details [here](https://gdc.cancer.gov/about-data/publications/pancanatlas) and here.
+
+This was discussed in another thread here.
+
+```bash
+mkdir -p data/raw/PanCanAtlas/
+cd data/raw/PanCanAtlas/
+wget http://api.gdc.cancer.gov/data/3586c0da-64d0-4b74-a449-5ff4d9136611
+```
+#### Microbiome data
+
+```bash
+mkdir -p data/raw/Kinght_2020
+cd data/raw/Kinght_2020
+wget 
+```
+
+### 1. Setup
 
 ```bash
 cd ./src
-Rscript 01_preprocess_data.R
+Rscript preprocess_data.R
 ```
 
 ### SparseCCA
 
 ```bash
+
 Options:
         -p PROJECT, --project=PROJECT
                 TCGA cancer project [default: TCGA-BRCA]
