@@ -98,11 +98,11 @@ feat.gene.raw <- load_gene_expr(paste0(data.loc,"raw/PanCanAtlas/EBPlusPlusAdjus
 dim(feat.gene.raw)
 
 
-meta.all <- load_microbiome_abnd(paste0(data.loc,"raw/Kinght_2020/Metadata-TCGA-All-18116-Samples.csv"))
+meta.all <- load_microbiome_abnd(paste0(data.loc,"raw/Knight_2020/Metadata-TCGA-All-18116-Samples.csv"))
 dim(meta.all)
 
 ## load microbiome data
-feat.otu.relt <- load_microbiome_abnd(paste0(data.loc,"raw/Kinght_2020/Kraken-TCGA-Voom-SNM-All-Putative-Contaminants-Removed-Data.csv"))
+feat.otu.relt <- load_microbiome_abnd(paste0(data.loc,"raw/Knight_2020/Kraken-TCGA-Voom-SNM-All-Putative-Contaminants-Removed-Data.csv"))
 dim(feat.otu.relt)
 
 ## change meta rownames as aliquot_ids
@@ -115,19 +115,38 @@ rownames(meta.all) <- meta.all[,"aliquot_uuid"]
 # Transform TCGAbarcode to UUID
 TCGAbarcode <- colnames(feat.gene.raw)
 UUID.idx <- TCGAutils::barcodeToUUID(TCGAbarcode)
-rownames(UUID.idx) <- UUID.idx$submitter_aliquot_ids
-colnames(feat.gene.raw) <- UUID.idx[colnames(feat.gene.raw),"aliquot_ids"]
-colnames(feat.gene.raw) <- toupper(colnames(feat.gene.raw))#大写
+##If offline
+# UUID.idx <- readRDS("../data/TCGAbarcode2UUID.RDS")
+UUID.idx$aliquot_ids<- toupper(UUID.idx$aliquot_ids)#Toupper
+rownames(UUID.idx) <- UUID.idx$aliquot_ids
+
+##get the submitter_aliquot_ids
+meta.all[,"submitter_aliquot_ids"] <- UUID.idx[rownames(meta.all),"submitter_aliquot_ids"]
+
+sum(!is.na(meta.all$submitter_aliquot_ids))
+#11059
+
+#get valid idx between gene expr and metadata
+meta.all.valid <- meta.all[!is.na(meta.all$submitter_aliquot_ids),]
+
+#get final valid idx 
+sample.idx.valid <- intersect(rownames(feat.otu.relt),meta.all.valid[,"ID"])
+length(sample.idx.valid)
+# 10769
+feat.otu.relt.valid <- feat.otu.relt[sample.idx.valid,]
+rownames(meta.all ) <-meta.all$ID
+rownames(meta.all.valid) <-meta.all.valid$ID
+meta.all.valid <- meta.all[sample.idx.valid,]
+rownames(feat.otu.relt.valid) <- meta.all.valid[rownames(feat.otu.relt.valid),"submitter_aliquot_ids"]
+feat.gene.raw.valid <- feat.gene.raw[,rownames(feat.otu.relt.valid)]
 
 
-sample.idx <- meta.all[colnames(feat.gene.raw),"ID"]
-colnames(feat.gene.raw) <-sample.idx
 
-
-gene.name <-str_split_fixed(rownames(feat.gene.raw),"\\|",2)[,1]#get the gene name
-rownames(feat.gene.raw) <- gene.name
+gene.name <-str_split_fixed(rownames(feat.gene.raw.valid),"\\|",2)[,1]#get the gene name
+rownames(feat.gene.raw.valid) <- gene.name
 ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl",host="https://www.ensembl.org")
-
+##If offline
+# ensembl <- readRDS("../data/emsembl.RDS")
 
 #used the ‘biomaRt’ R package to only keep data for protein-coding genes
 #ref:https://www.biostars.org/p/9517934/#9517940
@@ -139,19 +158,20 @@ transcript.biotype <- biomaRt::getBM(
 gene.proteincoding.keep <- transcript.biotype[which(transcript.biotype$"transcript_biotype"=="protein_coding"),]
 
 gene.proteincoding.keep <- intersect(gene.proteincoding.keep$"hgnc_symbol",gene.name)
-feat.gene.protein <- feat.gene.raw[gene.proteincoding.keep,]
-feat.gene.protein <- t(feat.gene.protein)
-dim(feat.gene.protein)
-## 
-rownames(meta.all) <- meta.all$ID
-sample.idx <- intersect(rownames(feat.gene.protein),rownames(meta.all))
-sample.idx <- intersect(sample.idx,rownames(feat.otu.relt))
-cat('Feature genes expression dimensions:', length(sample.idx), '\n')
-
-## get data from idx
-feat.gene.protein.valid <- feat.gene.protein[sample.idx,]
-feat.otu.relt.valid <- feat.otu.relt[sample.idx,]
-meta.all.valid <- meta.all[sample.idx,]
+feat.gene.protein.valid <- feat.gene.raw.valid[gene.proteincoding.keep,]
+feat.gene.protein.valid <- t(feat.gene.protein.valid)
+dim(feat.gene.protein.valid)
+# 
+# ## 
+# rownames(meta.all) <- meta.all$ID
+# sample.idx <- intersect(rownames(feat.gene.protein),rownames(meta.all))
+# sample.idx <- intersect(sample.idx,rownames(feat.otu.relt))
+# cat('Feature genes expression dimensions:', length(sample.idx), '\n')
+# 
+# ## get data from idx
+# feat.gene.protein.valid <- feat.gene.protein[sample.idx,]
+# feat.otu.relt.valid <- feat.otu.relt[sample.idx,]
+# meta.all.valid <- meta.all[sample.idx,]
 
 ## Ensure same sampleIDs in both genes and microbes data
 stopifnot(all(rownames(feat.gene.protein.valid) == rownames(feat.otu.relt.valid)))
