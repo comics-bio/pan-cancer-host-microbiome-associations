@@ -26,9 +26,7 @@ To reproduce the main figures and result  of the project, you can follow these i
 #### RNA expression data matrix
 The matrix `EBPlusPlusAdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv` was generated following the Firehose pipeline: MapSplice + RSEM, then normalised by setting the upper-quartile to 1,000.
 
-Pipeline details [here](https://gdc.cancer.gov/about-data/publications/pancanatlas) and here.
-
-This was discussed in another thread here.
+Pipeline details [here](https://gdc.cancer.gov/about-data/publications/pancanatlas) .
 
 ```bash
 mkdir -p data/raw/PanCanAtlas/
@@ -37,9 +35,11 @@ wget http://api.gdc.cancer.gov/data/3586c0da-64d0-4b74-a449-5ff4d9136611
 ```
 #### Microbiome data
 
+Pipeline details [here](https://www.nature.com/articles/s41586-020-2095-1#data-availability)
+
 ```bash
-mkdir -p data/raw/Kinght_2020
-cd data/raw/Kinght_2020
+mkdir -p data/raw/Knight_2020
+cd data/raw/Knight_2020
 wget 
 ```
 
