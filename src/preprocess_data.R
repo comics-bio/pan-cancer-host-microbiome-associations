@@ -114,12 +114,11 @@ rownames(meta.all) <- meta.all[,"aliquot_uuid"]
 
 # Transform TCGAbarcode to UUID
 TCGAbarcode <- colnames(feat.gene.raw)
-UUID.idx <- TCGAutils::barcodeToUUID(TCGAbarcode)
+# UUID.idx <- TCGAutils::barcodeToUUID(TCGAbarcode)
 ##If offline
-# UUID.idx <- readRDS("../data/TCGAbarcode2UUID.RDS")
+UUID.idx <- readRDS("../data/TCGAbarcode2UUID.RDS")
 UUID.idx$aliquot_ids<- toupper(UUID.idx$aliquot_ids)#Toupper
 rownames(UUID.idx) <- UUID.idx$aliquot_ids
-
 ##get the submitter_aliquot_ids
 meta.all[,"submitter_aliquot_ids"] <- UUID.idx[rownames(meta.all),"submitter_aliquot_ids"]
 
@@ -139,21 +138,22 @@ rownames(meta.all.valid) <-meta.all.valid$ID
 meta.all.valid <- meta.all[sample.idx.valid,]
 rownames(feat.otu.relt.valid) <- meta.all.valid[rownames(feat.otu.relt.valid),"submitter_aliquot_ids"]
 feat.gene.raw.valid <- feat.gene.raw[,rownames(feat.otu.relt.valid)]
-
+rownames(meta.all.valid) <-meta.all.valid$submitter_aliquot_ids
 
 
 gene.name <-str_split_fixed(rownames(feat.gene.raw.valid),"\\|",2)[,1]#get the gene name
 rownames(feat.gene.raw.valid) <- gene.name
-ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl",host="https://www.ensembl.org")
+# ensembl <- useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl",host="https://www.ensembl.org")
 ##If offline
-# ensembl <- readRDS("../data/emsembl.RDS")
+
 
 #used the ‘biomaRt’ R package to only keep data for protein-coding genes
 #ref:https://www.biostars.org/p/9517934/#9517940
-transcript.biotype <- biomaRt::getBM(
-  attributes=c("hgnc_symbol","transcript_biotype"),
-  #filters = c("transcript_biotype"), 
-  values=gene.name, mart=ensembl)
+# transcript.biotype <- biomaRt::getBM(
+#   attributes=c("hgnc_symbol","transcript_biotype"),
+#   #filters = c("transcript_biotype"), 
+#   values=gene.name, mart=ensembl)
+transcript.biotype <- readRDS("../data/transcript_biotype.RDS")
 
 gene.proteincoding.keep <- transcript.biotype[which(transcript.biotype$"transcript_biotype"=="protein_coding"),]
 
@@ -211,7 +211,7 @@ for (project in projects) {
                     subset(investigation == project) %>%
                     subset(sample_type %in% c("Primary Tumor","Solid Tissue Normal"))
   
-  feat.otu.relt.projcet <- feat.otu.relt[rownames(meta.project),]
+  feat.otu.relt.projcet <- feat.otu.relt.valid[rownames(meta.project),]
   feat.gene.protein.project <- feat.gene.protein.valid[rownames(meta.project),]
   
   stopifnot(all(rownames(feat.gene.protein.project) == rownames(feat.otu.relt.projcet)))
@@ -272,19 +272,19 @@ for (project in projects) {
   cat('Feature genes expression control dimensions:', dim(feat.gene.protein.project.ctr), '\n')
   write.table(feat.gene.protein.project.ctr,
               sep="\t",
-              file = paste0(case_output_dirname,"Geneexpr-TCGA-ProteinCoding-QtFilt-",project,"-ctr.tsv"))
+              file = paste0(ctr_output_dirname,"Geneexpr-TCGA-ProteinCoding-QtFilt-",project,"-ctr.tsv"))
   
   feat.otu.relt.projcet.ctr <- feat.otu.relt.projcet[ctr.idx,]
   cat('Feature microbiome otu case dimensions:', dim(feat.otu.relt.projcet.ctr), '\n')
   
   write.table(feat.otu.relt.projcet.ctr,
               sep="\t",
-              file =paste0(case_output_dirname,"Kraken-TCGA-Voom-SNM-",project,"-ctr.tsv"))
+              file =paste0(ctr_output_dirname,"Kraken-TCGA-Voom-SNM-",project,"-ctr.tsv"))
   
   meta.project.ctr <- meta.project[ctr.idx,]
   write.table(meta.project.ctr,
               sep="\t",
-              file = paste0(case_output_dirname,"Metadata-TCGA-Valid-",project,"-ctr.tsv"))
+              file = paste0(ctr_output_dirname,"Metadata-TCGA-Valid-",project,"-ctr.tsv"))
   
   cat('Metadata case dimensions:', dim(meta.project.ctr), '\n')
   cat("Successfully segmented ",project," control datasets\n")
