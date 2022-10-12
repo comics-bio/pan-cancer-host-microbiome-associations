@@ -17,6 +17,7 @@ data/Preprocessed
 docs/
 figures/
 bsub_jobs/
+result/
 
 *.png
 *.rds

@@ -45,7 +45,6 @@ start.time <- proc.time()[1]
 ## load parameters
 parameters <- yaml.load_file('../parameters.yaml')
 cat("Loaded yaml config\n")
-
 set.seed(parameters$public$seed)
 data.loc <- parameters$public$data.loc
 tag <- parameters$SparseCCA$tag
@@ -63,10 +62,11 @@ if (TRUE){
                 help="The analysis result location [default: %default]"),
     make_option(c("-n","--num"), type="integer", default= parameters$SparseCCA$num_cores,
                 help="Cluster cores numbers [default: %default]"),
+    make_option(c("-f","--fdr"), type="numeric", default=parameters$SparseCCA$FDR.cutoff,
+                help="significance cutoff[default: %default]"),
     make_option(c("-c","--componet"), type="integer", default= parameters$SparseCCA$num_componets,
-                help="CCA componet[default: %default]"),
-    make_option(c("-f","--fdr"), type="integer", default=parameters$SparseCCA$FDR.cutoff,
                 help="CCA componet[default: %default]")
+    
   )
   opts = parse_args(OptionParser(option_list=option_list))
   
@@ -83,6 +83,7 @@ if (TRUE){
 # # ----------------------------------------------------------------------
 # #                              Function 
 # # ----------------------------------------------------------------------
+
 tune_params_grid_search_parallel <- function(X, Y,penaltyX,penaltyY){
   num_samples <- nrow(X)
   tune_start_time <- Sys.time()
@@ -141,7 +142,7 @@ test_significance_LOOCV_parallel <- function(X, Y, bestpenaltyX, bestpenaltyY, n
     score_single <- cbind(scoresXcv_single,scoresYcv_single)
     score_single
   }
-
+  
   ## Test for each components
   for(j in 1:cca.k){
     corr <- cor.test(score[,j],score[,j+10]) ## Pearson correlation.
@@ -154,26 +155,24 @@ run_sparseCCA <- function(X, Z, CCA.K, penaltyX, penaltyZ, vInit=NULL, outputFil
   CCA.out <-  CCA(X,Z,typex="standard",typez="standard",K=CCA.K,
                   penaltyx=penaltyX,penaltyz=penaltyZ,
                   v=vInit)
+  #Output CCA result
   if(!is.null(outputFile)){
     sink(outputFile)
     print(CCA.out)
     sink()
   }
-
-  # if(!dir.exists(outputFile){
-  #   dir.create(outputFile)
-  # }
+  
   ifelse(!dir.exists(outputFile), dir.create(outputFile), FALSE)
-
+  
   ## add rownames to output factors
   rownames(CCA.out$u) <- colnames(X)
   rownames(CCA.out$v) <- colnames(Z)
   ## compute contribution of selected features to each of the samples.
   CCA_var_genes <- X %*% CCA.out$u ## canonical variance for genes
   CCA_var_microbes <- Z %*% CCA.out$v ## canonical variance for microbes
-
+  
   return(list(CCA.out, CCA_var_genes, CCA_var_microbes))
-
+  
 }
 
 save_CCA_components <- function(CCA.out, CCA.K, dirname){
@@ -196,8 +195,23 @@ save_CCA_components <- function(CCA.out, CCA.K, dirname){
                                        taxa = selected_Z, taxa_coeff = coeff_Z))
     write.table(selected_XZ, file=paste0(dirname,"gene_taxa_component_",i,".txt"), sep = "\t", col.names = NA)
   }
-
+  
 }
+filter_genes <- function(feat.gene, qt){
+  ## feat.gene rownames is sample
+  feat.gene.t <- t(feat.gene)
+  genes.sd <- transform(as.data.frame(feat.gene.t), SD=apply(as.data.frame(feat.gene.t),1, sd, na.rm = TRUE))
+  ## select top genes with high SD (~ variability) across samples
+  SD_quantile <- quantile(genes.sd$SD) ## identical to summary(genes.sd$SD)
+  SD_cutoff <- SD_quantile[qt] ## 2nd quantile -- 25th quantile.
+  genes.sd <- genes.sd[order(genes.sd$SD, decreasing = T),]
+  top.variable.genes <- rownames(genes.sd[genes.sd$SD > SD_cutoff,])
+  ## subset these genes from gene table
+  select <- which(colnames(feat.gene) %in% top.variable.genes)
+  feat.gene <- feat.gene[,select]
+}
+
+
 get_avg_features <- function(cca_cov, CCA.K){
   num_features <- 0
   for(k in 1:CCA.K){
@@ -207,28 +221,29 @@ get_avg_features <- function(cca_cov, CCA.K){
 }
 
 
-# ----------------------------------------------------------------------
-#                              Main
-# ----------------------------------------------------------------------
-## now initiate parallel processors.
-cl <- makeCluster(opts$cores) # 8 workers per core -- itasca
+# # ----------------------------------------------------------------------
+# #                              Main
+# # ----------------------------------------------------------------------
+# ## now initiate parallel processors.
+cl <- makeCluster(opts$num) # 8 workers per core -- itasca
 registerDoParallel(cl)
 print(paste0("Number of workers: ", getDoParWorkers()))
 
 penaltyX <- seq(0.1,0.4,length=10)
 penaltyY <- seq(0.15,0.4,length=10)
+cca.k <- opts$componet
+# ##############################################################################
+# Case compute
 
-
-###################
-###       CASE
-###################
-
-input_dirname <- paste0(data.loc,parameters$preprocess$tag,"/",opts$project,"/case/")
+## load gene expression and microbiome tables
+input_dirname <- paste0(data.loc,parameters$preprocess$tag,"/by_type/",opts$project,"/case/")
 filenames <- list.files(input_dirname)
 cat("Read data from ",input_dirname," .....")
 
-
 feat.gene.expr <- read.table(paste0(input_dirname,grep("Geneexpr",filenames,value = TRUE)))
+feat.gene.expr <- as.matrix(feat.gene.expr)
+feat.gene.expr[is.na(feat.gene.expr)] <- 0
+feat.gene.expr <- filter_genes(feat.gene.expr,2)
 feat.gene.expr <- as.matrix(feat.gene.expr)
 cat('Feature genes expression dimensions:', dim(feat.gene.expr), '\n')
 
@@ -236,28 +251,16 @@ feat.otu.relt <- read.table(paste0(input_dirname,grep("Kraken",filenames,value =
 feat.otu.relt <- as.matrix(feat.otu.relt)
 cat('Feature microbiome otu dimensions:', dim(feat.otu.relt), '\n')
 
+## Ensure same sampleIDs in both genes and microbes data before sparse CCA
 stopifnot(all(rownames(feat.gene.expr) == rownames(feat.otu.relt)))
 
 meta.project <- read.table(paste0(input_dirname,grep("Metadata",filenames,value = TRUE)))
-dim(meta.project)
+cat('Metadata dimensions:', dim(meta.project), '\n')
 
 
-# 
-# case.idx <-  rownames(meta.project[which(meta.project[,"sample_type"]=="Primary Tumor"),])#get case id
-# 
-# feat.gene.expr.case <- feat.gene.expr[case.idx,]
-# cat('Feature genes expression case dimensions:', dim(feat.gene.expr.case), '\n')
-# 
-# feat.otu.relt.case <- feat.otu.relt[case.idx,]
-# cat('Feature microbiome otu case dimensions:', dim(feat.otu.relt.case), '\n')
-# 
-# meta.project.case <- meta.project[case.idx,]
-# cat('Metadata case dimensions:', dim(meta.project.case), '\n')
-
-
-
-tune_cca_mat <- tune_params_grid_search_parallel(feat.gene.expr.case,
-                                                 feat.otu.relt.case,
+## select tuning parameters using grid-search
+tune_cca_mat <- tune_params_grid_search_parallel(feat.gene.expr,
+                                                 feat.otu.relt,
                                                  penaltyX,
                                                  penaltyY)
 tune_cca <- as.data.frame(tune_cca_mat)
@@ -266,8 +269,8 @@ cat('Successfully complete hyperparameters grid search analysis in',
     proc.time()[1]-start.time, 'second...\n')
 
 
-##identify best penalty parameters
-# find index with max absolute corr
+## identify best penalty parameters
+### find index with max absolute corr
 colnames(tune_cca) <-  c("scoreXcv","scoreYcv","i","j","k")
 corr_demo <- matrix(nrow = length(penaltyX), ncol =  length(penaltyY))
 for( i in 1:length(penaltyX)){
@@ -289,73 +292,261 @@ bestpenalty
 
 bestpenaltyX <- penaltyX[bestpenalty[1]]
 bestpenaltyY <- penaltyY[bestpenalty[2]]
-cat("TCGA PROJECT:",opts$project,"casee bestpenaltyX is ",bestpenaltyX)
+cat("TCGA PROJECT:",opts$project,"case bestpenaltyX is ",bestpenaltyX)
 cat("TCGA PROJECT:",opts$project,"case bestpenaltyY is ",bestpenaltyY)
-
 
 ## Run sparse CCA using selected tuning param using permutation search
 
-cat("Run sparse CCA using selected tuning param using permutation search")
-output_dirname <- paste0(current_dir,"/output")
-ifelse(!dir.exists(output_dirname), dir.create(output_dirname), FALSE)
+cat("Run sparse CCA using selected tuning param using permutation search\n")
+
+## This will return FALSE if the directory already exists or is uncreatable,
+## and TRUE if it didn't exist but was succesfully created.
+output_dirname <- paste0(result.loc,"geneExp_taxa/case/grid_search_",bestpenaltyX,"_",bestpenaltyY,"/")
+ifelse(!dir.exists(output_dirname), dir.create(output_dirname,recursive = TRUE), FALSE)
+
 cca <- run_sparseCCA(feat.gene.expr, feat.otu.relt,
                      cca.k,
                      bestpenaltyX,
                      bestpenaltyY,
-                     outputFile=paste0("./data/analysis/",disease,"/output_sparseCCA_V2/grid_search/CCA.output.gridsearch",bestpenaltyX,"_",bestpenaltyY,".txt"))
+                     outputFile=paste0(output_dirname,"CCA_case_output_gridsearch_",bestpenaltyX,"_",bestpenaltyY,".txt"))
 
 ## average number of genes and microbes in resulting components
 avg_genes <- get_avg_features(cca[[1]]$u, cca.k)
-cat("avg_genes",avg_genes)
+cat("case avg_genes",avg_genes)
 
 avg.microbes <- get_avg_features(cca[[1]]$v, cca.k)
-cat("avg_microbiomes",avg.microbes)
+cat("case avg_microbiomes",avg.microbes)
 
 ## Test for each components
 CCA_pval <- test_significance_LOOCV_parallel(feat.gene.expr,feat.otu.relt, bestpenaltyX, bestpenaltyY, cca.k)
 
-length(which(CCA_pval < 0.1))
-which(CCA_pval < 0.1)
+length(which(CCA_pval < opts$fdr))
+which(CCA_pval < opts$fdr)
 
 CCA_padj <- p.adjust(CCA_pval, method = "BH")
 CCA_padj
 
-length(which(CCA_padj < opts$pval.cutoff))
-which(CCA_padj < opts$pval.cutoff)
+length(which(CCA_padj < opts$fdr))
+which(CCA_padj < opts$fdr)
 
-#### Output significant components
-sig_cutoff <- opts$pval.cutoff
+## Save significant components
+sig_cutoff <- opts$fdr
 sig <- which(CCA_padj < sig_cutoff)
-dirname <- paste0(current_dir,"/output/gene_taxa_components_brca_case/")
-## This will return FALSE if the directory already exists or is uncreatable,
-## and TRUE if it didn't exist but was succesfully created.
-ifelse(!dir.exists(dirname), dir.create(dirname), FALSE)
-save_CCA_components(cca[[1]],sig,dirname)
+sig_components_dirname <- paste0(output_dirname,"sig_components_case_",bestpenaltyX,"_",bestpenaltyY,"/")
+ifelse(!dir.exists(sig_components_dirname), dir.create(sig_components_dirname), FALSE)
+save_CCA_components(cca[[1]],sig,sig_components_dirname)
 
-cat('Successfully complete CCA case pval analysis in',
-    proc.time()[1]-start.time, 'second...\n')
-
-outputFile <- paste0("./data/analysis/",dataset,"/output_sparseCCA_V2/grid_search/gene_taxa_components/crc_sparseCCA_summary_",bestpenaltyX,"_",bestpenaltyY,".txt")
-sink(outputFile)
+## Print summary
+fn_summary <- paste0(sig_components_dirname,opts$project,"_CCA_case_summary_",bestpenaltyX,"_",bestpenaltyY,".txt")
+sink(fn_summary)
 cat(paste0(" bestpenaltyX = ", bestpenaltyX, ", bestpenaltyY = ", bestpenaltyY))
 cat(paste0("\n cor(Xu,Yv): \n"))
 cat(paste0(signif(cca[[1]]$cors, digits = 4)))
 cat(paste0("\n Avg. no. of genes across components = ",avg_genes))
 cat(paste0("\n Avg. no. of microbes across components= ", avg.microbes))
 cat(paste0("\n P-value for components (LOOCV): \n"))
-cat(paste0(signif(corr_pval, digits = 4)))
-cat(paste0("\n LOOCV corr: \n"))
-cat(paste0(signif(corr_r, digits = 4)))
-cat(paste0("\n No. of components with p-value < 0.1 = ", length(which(corr_pval < 0.1))))
-cat(paste0("\n No. of components with p-value < 0.05 = ", length(which(corr_pval < 0.05))))
-cat(paste0("\n No. of components with FDR < 0.1 = ", length(which(corr_padj < 0.1))))
-cat(paste0("\n Significant components: \n" ))
-cat(paste0(which(corr_padj < 0.1)))
+cat(paste0(signif(CCA_pval, digits = 4)))
+# cat(paste0("\n LOOCV corr: \n"))
+# cat(paste0(signif(corr_r, digits = 4)))
+cat(paste0("\n No. of components with p-value < 0.1 = ", length(which(CCA_pval < 0.1))))
+cat(paste0("\n No. of components with p-value < 0.05 = ", length(which(CCA_pval < 0.05))))
+cat(paste0("\n No. of components with p-value < 0.005 = ", length(which(CCA_pval < 0.005))))
+cat(paste0("\n No. of components with FDR < 0.1 = ", length(which(CCA_padj < 0.1))))
+cat(paste0("\n No. of components with FDR < 0.05 = ", length(which(CCA_padj < 0.05))))
+cat(paste0("\n No. of components with FDR < 0.005 = ", length(which(CCA_padj < 0.005))))
+cat(paste0("\n Significant components with cutoff ",opts$fdr," : \n" ))
+cat(paste0(which(CCA_padj < opts$fdr)))
+cat(paste0("\n Significant components result location in  ",sig_components_dirname," : \n" ))
 sink()
 
-sig <- which(corr_padj < 0.1)
-dirname <- paste0("./data/analysis/",dataset,"/output_sparseCCA_V2/grid_search/gene_taxa_components/sig_gene_taxa_components_",bestpenaltyX,"_", bestpenaltyY,"_padj/")
+
+## Print total summary
+fn_total <- paste0(opts$output,tag,"/","CCA_case_total_summary.txt")
+sink(fn_total,append = TRUE)
+cat(paste0("#########################################\n"))
+cat(paste0("Analysis Project:",opts$project,"\n"))
+cat(paste0(" bestpenaltyX = ", bestpenaltyX, ", bestpenaltyY = ", bestpenaltyY))
+cat(paste0("\n cor(Xu,Yv): \n"))
+cat(paste0(signif(cca[[1]]$cors, digits = 4)))
+cat(paste0("\n Avg. no. of genes across components = ",avg_genes))
+cat(paste0("\n Avg. no. of microbes across components= ", avg.microbes))
+cat(paste0("\n P-value for components (LOOCV): \n"))
+cat(paste0(signif(CCA_pval, digits = 4)))
+# cat(paste0("\n LOOCV corr: \n"))
+# cat(paste0(signif(corr_r, digits = 4)))
+cat(paste0("\n No. of components with p-value < 0.1 = ", length(which(CCA_pval < 0.1))))
+cat(paste0("\n No. of components with p-value < 0.05 = ", length(which(CCA_pval < 0.05))))
+cat(paste0("\n No. of components with p-value < 0.005 = ", length(which(CCA_pval < 0.005))))
+cat(paste0("\n No. of components with FDR < 0.1 = ", length(which(CCA_padj < 0.1))))
+cat(paste0("\n No. of components with FDR < 0.05 = ", length(which(CCA_padj < 0.05))))
+cat(paste0("\n No. of components with FDR < 0.005 = ", length(which(CCA_padj < 0.005))))
+cat(paste0("\n Significant components: \n" ))
+cat(paste0(which(CCA_padj < 0.1)))
+cat(paste0("\n#########################################\n"))
+sink()
+
+cat('Successfully complete',opts$project,' CCA case pval analysis and save results in',
+    proc.time()[1]-start.time, 'second...\n')
+cat("Result saved in ",sig_components_dirname,".\n")
+
+
+
+
+# ##############################################################################
+# Control compute
+
+## load gene expression and microbiome tables
+input_dirname <- paste0(data.loc,parameters$preprocess$tag,"/by_type/",opts$project,"/control/")
+filenames <- list.files(input_dirname)
+cat("Read data from ",input_dirname," .....")
+
+feat.gene.expr <- read.table(paste0(input_dirname,grep("Geneexpr",filenames,value = TRUE)))
+feat.gene.expr <- as.matrix(feat.gene.expr)
+feat.gene.expr[is.na(feat.gene.expr)] <- 0
+feat.gene.expr <- filter_genes(feat.gene.expr,2)
+feat.gene.expr <- as.matrix(feat.gene.expr)
+cat('Feature genes expression dimensions:', dim(feat.gene.expr), '\n')
+
+feat.otu.relt <- read.table(paste0(input_dirname,grep("Kraken",filenames,value = TRUE)))
+feat.otu.relt <- as.matrix(feat.otu.relt)
+cat('Feature microbiome otu dimensions:', dim(feat.otu.relt), '\n')
+
+## Ensure same sampleIDs in both genes and microbes data before sparse CCA
+stopifnot(all(rownames(feat.gene.expr) == rownames(feat.otu.relt)))
+
+meta.project <- read.table(paste0(input_dirname,grep("Metadata",filenames,value = TRUE)))
+cat('Metadata dimensions:', dim(meta.project), '\n')
+dim(meta.project)
+
+## select tuning parameters using grid-search
+tune_cca_mat <- tune_params_grid_search_parallel(feat.gene.expr,
+                                                 feat.otu.relt,
+                                                 penaltyX,
+                                                 penaltyY)
+tune_cca <- as.data.frame(tune_cca_mat)
+
+cat('Successfully complete hyperparameters grid search analysis in',
+    proc.time()[1]-start.time, 'second...\n')
+
+
+## identify best penalty parameters
+### find index with max absolute corr
+colnames(tune_cca) <-  c("scoreXcv","scoreYcv","i","j","k")
+corr_demo <- matrix(nrow = length(penaltyX), ncol =  length(penaltyY))
+for( i in 1:length(penaltyX)){
+  for(j in 1:length(penaltyY)){
+    data <- tune_cca[which(tune_cca$i==i&tune_cca$j==j),]
+    corr_demo[i,j] = cor(data[,"scoreXcv"],data[,"scoreYcv"])
+  }
+}
+
+row.names(corr_demo) <- as.character(penaltyX)
+colnames(corr_demo) <- as.character(penaltyY)
+corr_demo_df <- as.data.frame(corr_demo)
+rownames(corr_demo_df)
+colnames(corr_demo_df)
+
+bestpenalty <- which(abs(corr_demo) == max(abs(corr_demo)), arr.ind = TRUE)
+
+bestpenalty
+
+bestpenaltyX <- penaltyX[bestpenalty[1]]
+bestpenaltyY <- penaltyY[bestpenalty[2]]
+cat("TCGA PROJECT:",opts$project,"control bestpenaltyX is ",bestpenaltyX)
+cat("TCGA PROJECT:",opts$project,"control bestpenaltyY is ",bestpenaltyY)
+
+## Run sparse CCA using selected tuning param using permutation search
+
+cat("Run sparse CCA using selected tuning param using permutation search\n")
+
 ## This will return FALSE if the directory already exists or is uncreatable,
 ## and TRUE if it didn't exist but was succesfully created.
-ifelse(!dir.exists(dirname), dir.create(dirname), FALSE)
-save_CCA_components(cca[[1]],sig,dirname)
+output_dirname <- paste0(result.loc,"geneExp_taxa/control/grid_search_",bestpenaltyX,"_",bestpenaltyY,"/")
+ifelse(!dir.exists(output_dirname), dir.create(output_dirname,recursive = TRUE), FALSE)
+
+cca <- run_sparseCCA(feat.gene.expr, feat.otu.relt,
+                     cca.k,
+                     bestpenaltyX,
+                     bestpenaltyY,
+                     outputFile=paste0(output_dirname,"CCA_control_output_gridsearch_",bestpenaltyX,"_",bestpenaltyY,".txt"))
+
+## average number of genes and microbes in resulting components
+avg_genes <- get_avg_features(cca[[1]]$u, cca.k)
+cat("control avg_genes",avg_genes)
+
+avg.microbes <- get_avg_features(cca[[1]]$v, cca.k)
+cat("control avg_microbiomes",avg.microbes)
+
+## Test for each components
+CCA_pval <- test_significance_LOOCV_parallel(feat.gene.expr,feat.otu.relt, bestpenaltyX, bestpenaltyY, cca.k)
+
+length(which(CCA_pval < opts$fdr))
+which(CCA_pval < opts$fdr)
+
+CCA_padj <- p.adjust(CCA_pval, method = "BH")
+CCA_padj
+
+length(which(CCA_padj < opts$fdropts$fdr))
+which(CCA_padj < opts$fdr)
+
+## Save significant components
+sig_cutoff <- opts$fdr
+sig <- which(CCA_padj < sig_cutoff)
+sig_components_dirname <- paste0(output_dirname,"sig_components_control",bestpenaltyX,"_",bestpenaltyY,"/")
+ifelse(!dir.exists(sig_components_dirname), dir.create(sig_components_dirname), FALSE)
+save_CCA_components(cca[[1]],sig,sig_components_dirname)
+
+## Print summary
+fn_summary <- paste0(sig_components_dirname,opts$project,"_CCA_control_summary_",bestpenaltyX,"_",bestpenaltyY,".txt")
+sink(fn_summary)
+cat(paste0(" bestpenaltyX = ", bestpenaltyX, ", bestpenaltyY = ", bestpenaltyY))
+cat(paste0("\n cor(Xu,Yv): \n"))
+cat(paste0(signif(cca[[1]]$cors, digits = 4)))
+cat(paste0("\n Avg. no. of genes across components = ",avg_genes))
+cat(paste0("\n Avg. no. of microbes across components= ", avg.microbes))
+cat(paste0("\n P-value for components (LOOCV): \n"))
+cat(paste0(signif(CCA_pval, digits = 4)))
+# cat(paste0("\n LOOCV corr: \n"))
+# cat(paste0(signif(corr_r, digits = 4)))
+cat(paste0("\n No. of components with p-value < 0.1 = ", length(which(CCA_pval < 0.1))))
+cat(paste0("\n No. of components with p-value < 0.05 = ", length(which(CCA_pval < 0.05))))
+cat(paste0("\n No. of components with p-value < 0.005 = ", length(which(CCA_pval < 0.005))))
+cat(paste0("\n No. of components with FDR < 0.1 = ", length(which(CCA_padj < 0.1))))
+cat(paste0("\n No. of components with FDR < 0.05 = ", length(which(CCA_padj < 0.05))))
+cat(paste0("\n No. of components with FDR < 0.005 = ", length(which(CCA_padj < 0.005))))
+cat(paste0("\n Significant components with cutoff ",opts$fdr," : \n" ))
+cat(paste0(which(CCA_padj < opts$fdr)))
+cat(paste0("\n Significant components result location in  ",sig_components_dirname," : \n" ))
+sink()
+
+## Print total summary
+fn_total <- paste0(opts$output,tag,"/","CCA_control_total_summary.txt")
+sink(fn_total,append = TRUE)
+cat(paste0("#########################################\n"))
+cat(paste0("Analysis Project:",opts$project,"\n"))
+cat(paste0(" bestpenaltyX = ", bestpenaltyX, ", bestpenaltyY = ", bestpenaltyY))
+cat(paste0("\n cor(Xu,Yv): \n"))
+cat(paste0(signif(cca[[1]]$cors, digits = 4)))
+cat(paste0("\n Avg. no. of genes across components = ",avg_genes))
+cat(paste0("\n Avg. no. of microbes across components= ", avg.microbes))
+cat(paste0("\n P-value for components (LOOCV): \n"))
+cat(paste0(signif(CCA_pval, digits = 4)))
+# cat(paste0("\n LOOCV corr: \n"))
+# cat(paste0(signif(corr_r, digits = 4)))
+cat(paste0("\n No. of components with p-value < 0.1 = ", length(which(CCA_pval < 0.1))))
+cat(paste0("\n No. of components with p-value < 0.05 = ", length(which(CCA_pval < 0.05))))
+cat(paste0("\n No. of components with p-value < 0.005 = ", length(which(CCA_pval < 0.005))))
+cat(paste0("\n No. of components with FDR < 0.1 = ", length(which(CCA_padj < 0.1))))
+cat(paste0("\n No. of components with FDR < 0.05 = ", length(which(CCA_padj < 0.05))))
+cat(paste0("\n No. of components with FDR < 0.005 = ", length(which(CCA_padj < 0.005))))
+cat(paste0("\n Significant components: \n" ))
+cat(paste0(which(CCA_padj < 0.1)))
+cat(paste0("\n#########################################\n"))
+sink()
+
+cat('Successfully complete',opts$project,' CCA control pval analysis and save results in',
+    proc.time()[1]-start.time, 'second...\n')
+cat("Result saved in ",sig_components_dirname,".\n")
+
+cat('Successfully complete',opts$project,'whole sparseCCA analysis script in',
+    proc.time()[1]-start.time, 'second...\n')

@@ -10,5 +10,46 @@ preprocess:
 SparseCCA:
   tag: SparseCCA
   num_cores: 12
-  num_componets: 10
   FDR.cutoff: 0.1
+  num_componets: 10
+# Plotting
+plotting:
+    cancer.cols:
+        ACC: '#d8b024'
+        BLCA: '#ffdade'
+        BRCA: '#ff309c'
+        CESC: '#ffbd6e'
+        CHOL: '#006192'
+        COAD: "#7ee5f9"
+        DLBC: "#1768b6"
+    stage.cols:
+        early: '#D8AE84'
+        late: '#AE6C3D'
+    loc.cols:
+        LC: "#6BAED6"
+        RC: "#DEEBF7"
+        Rectum: "#08306B"
+    sex.cols:
+        F: '#FEB24C'
+        M: '#FFFFB2'
+    bmi.cols:
+        lean: '#53D680'
+        overweight/obese: '#086B27'
+    age.cols:
+        A: "#FF5959"
+        D: "#AD0000"
+    peformance.cols:
+        - 'black'
+        - 'darkgreen'
+        - 'forestgreen'
+        - 'chartreuse3'
+        - 'lawngreen'
+        - 'yellow'
+    gmm.cols:
+        amino acid degradation: "#F2AD00"
+        organic acid metabolism: "#F98400"
+        glycoprotein degradation: "brown"
+        carbohydrate degradation: "#00A08A"
+    group.cols:
+        CTR: "#C2C2C2"
+        CRC: '#d9544d'
