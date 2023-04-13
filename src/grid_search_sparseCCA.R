@@ -238,7 +238,7 @@ cca.k <- opts$componet
 ## load gene expression and microbiome tables
 input_dirname <- paste0(data.loc,parameters$preprocess$tag,"/by_type/",opts$project,"/case/")
 filenames <- list.files(input_dirname)
-cat("Read data from ",input_dirname," .....")
+cat("Read data from ",input_dirname," .....\n")
 
 feat.gene.expr <- read.table(paste0(input_dirname,grep("Geneexpr",filenames,value = TRUE)))
 feat.gene.expr <- as.matrix(feat.gene.expr)
@@ -292,12 +292,12 @@ bestpenalty
 
 bestpenaltyX <- penaltyX[bestpenalty[1]]
 bestpenaltyY <- penaltyY[bestpenalty[2]]
-cat("TCGA PROJECT:",opts$project,"case bestpenaltyX is ",bestpenaltyX)
-cat("TCGA PROJECT:",opts$project,"case bestpenaltyY is ",bestpenaltyY)
+cat("\nTCGA PROJECT:",opts$project,"case bestpenaltyX is ",bestpenaltyX)
+cat("\nTCGA PROJECT:",opts$project,"case bestpenaltyY is ",bestpenaltyY)
 
 ## Run sparse CCA using selected tuning param using permutation search
 
-cat("Run sparse CCA using selected tuning param using permutation search\n")
+cat("\nRun sparse CCA using selected tuning param using permutation search\n")
 
 ## This will return FALSE if the directory already exists or is uncreatable,
 ## and TRUE if it didn't exist but was succesfully created.
@@ -405,6 +405,8 @@ feat.gene.expr <- as.matrix(feat.gene.expr)
 feat.gene.expr[is.na(feat.gene.expr)] <- 0
 feat.gene.expr <- filter_genes(feat.gene.expr,2)
 feat.gene.expr <- as.matrix(feat.gene.expr)
+if(dim(feat.gene.expr)[1]<10)
+  stop("Control samples size is too small.\n")
 cat('Feature genes expression dimensions:', dim(feat.gene.expr), '\n')
 
 feat.otu.relt <- read.table(paste0(input_dirname,grep("Kraken",filenames,value = TRUE)))
@@ -452,8 +454,8 @@ bestpenalty
 
 bestpenaltyX <- penaltyX[bestpenalty[1]]
 bestpenaltyY <- penaltyY[bestpenalty[2]]
-cat("TCGA PROJECT:",opts$project,"control bestpenaltyX is ",bestpenaltyX)
-cat("TCGA PROJECT:",opts$project,"control bestpenaltyY is ",bestpenaltyY)
+cat("\nTCGA PROJECT:",opts$project,"control bestpenaltyX is ",bestpenaltyX)
+cat("\nTCGA PROJECT:",opts$project,"control bestpenaltyY is ",bestpenaltyY)
 
 ## Run sparse CCA using selected tuning param using permutation search
 
@@ -472,10 +474,10 @@ cca <- run_sparseCCA(feat.gene.expr, feat.otu.relt,
 
 ## average number of genes and microbes in resulting components
 avg_genes <- get_avg_features(cca[[1]]$u, cca.k)
-cat("control avg_genes",avg_genes)
+cat("\ncontrol avg_genes",avg_genes)
 
 avg.microbes <- get_avg_features(cca[[1]]$v, cca.k)
-cat("control avg_microbiomes",avg.microbes)
+cat("\ncontrol avg_microbiomes",avg.microbes)
 
 ## Test for each components
 CCA_pval <- test_significance_LOOCV_parallel(feat.gene.expr,feat.otu.relt, bestpenaltyX, bestpenaltyY, cca.k)
